@@ -1,12 +1,13 @@
 # Stoat CyberBot
 
-A simple music bot for Stoat.chat that can join a voice channel and play audio from YouTube links.
+A simple music bot for Stoat.chat that can join a voice channel and play audio from YouTube links or search keywords.
 
 ## Features
 
 - `ping` health-check command
 - Join a voice channel
 - Queue and play YouTube links
+- Search YouTube by keywords and play the first result
 - Skip, stop, and list queue items
 
 ## Requirements
@@ -46,8 +47,9 @@ Default prefix: `!` (can be changed with `PREFIX` in `.env`)
 - `!join <voiceChannelId>`  
   Connects the bot to the given voice channel.
 
-- `!play <youtube_link>`  
-  Adds a YouTube link to the queue and starts playback if idle.
+- `!play <youtube_link | search_keywords>`  
+  Accepts either a direct YouTube link or search keywords.  
+  If keywords are provided, the bot searches YouTube and queues the first result.
 
 - `!skip`  
   Skips the current track and moves to the next one.
@@ -63,6 +65,7 @@ Default prefix: `!` (can be changed with `PREFIX` in `.env`)
 ```text
 !join 1234567890abcdef
 !play https://www.youtube.com/watch?v=dQw4w9WgXcQ
+!play daft punk harder better faster stronger
 !queue
 !skip
 !stop
@@ -70,6 +73,7 @@ Default prefix: `!` (can be changed with `PREFIX` in `.env`)
 
 ## Notes
 
-- `!play` currently accepts direct YouTube links only.
+- For keyword searches, the bot resolves `ytsearch1:<query>` and uses the first result.
+- When a search query is used, the bot sends the resolved first result (title/link) before queueing.
 - The queue is kept in memory and resets when the bot restarts.
 - If `yt-dlp` is not installed, playback commands will fail.

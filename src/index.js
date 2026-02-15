@@ -138,7 +138,7 @@ async function playNext(textChannel) {
     stream.once("close", onDone);
 
     player.playStream(stream);
-    await textChannel.sendMessage(`▶️ Çalıyor: ${title}`);
+    await textChannel.sendMessage(`🎤 Çalıyor: ${title}`);
   } catch (e) {
     isPlaying = false;
     await textChannel.sendMessage(`⚠️ Çalamadım: ${String(e?.message ?? e)}`);

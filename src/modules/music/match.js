@@ -93,6 +93,9 @@ export function score(candidate, target) {
   if (target.artist) {
     const artistScore = coverage(target.artist, fullTokens, fullCompact);
     s = 0.65 * titleScore + 0.35 * artistScore;
+    // Resmî yükleme: yükleyen hesap sanatçının kendisi.
+    const uploader = cleanArtist(candidate.artist);
+    if (uploader && compact(uploader) === compact(target.artist)) s += 0.1;
   }
 
   // İstenmeyen versiyonlar (remix, cover, live...) sorguda yoksa ceza.
@@ -109,8 +112,14 @@ export function score(candidate, target) {
   // Süre: 30 sn'lik önizlemeler elenir. Aynı şarkının albüm/klip versiyonları farklı
   // uzunlukta olabildiği için süre farkına sadece hafif ceza verilir.
   const cd = candidate.duration;
-  const td = target.duration;
+  const known = (target.durations?.length ? target.durations : [target.duration]).filter(Boolean);
+  // Adayın süresine en yakın geçerli sürüm referans alınır.
+  const td = cd && known.length
+    ? known.reduce((a, b) => (Math.abs(b - cd) < Math.abs(a - cd) ? b : a))
+    : known[0];
   if (cd && cd < 45 && !(td && td < 60)) s -= 0.5;
+  // Süresi bilinmeyen sonuçlar (Bandcamp, Archive) doğrulanmış olanların önüne geçmesin.
+  if (!cd && td) s -= 0.05;
   if (cd && td) {
     const diff = Math.abs(cd - td);
     if (diff <= 10) s += 0.05;
@@ -119,7 +128,28 @@ export function score(candidate, target) {
     else if (diff > 30) s -= 0.05;
   }
 
-  return Math.max(0, Math.min(1, s));
+  // Üstten kırpılmaz ki resmî yükleme bonusu eşit puanlılar arasında fark yaratsın.
+  return Math.max(0, s);
+}
+
+// Başlık zaten "Sanatçı - Şarkı" ise yükleyen adını ekleme; "(Official Video)" gibi ekleri at.
+export function displayTitle(track) {
+  if (track.isRadio) return track.title;
+  const title = cleanTitle(track.title);
+  if (!title) return null;
+  if (!track.artist || /\s[-–—]\s/.test(title) || title.toLowerCase().includes(track.artist.toLowerCase())) {
+    return title;
+  }
+  return `${track.artist} - ${title}`;
+}
+
+export function formatDuration(sec) {
+  if (!sec) return null;
+  const s = Math.round(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
 
 export const GOOD_MATCH = 0.6;

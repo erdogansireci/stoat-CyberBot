@@ -1,11 +1,13 @@
 // Kullanıcının yazdığı link ya da aramayı, sırayla denenecek çalınabilir parçalara çevirir.
-import { shortError } from "../../core/chat.js";
-import { GOOD_MATCH, WEAK_MATCH, parseQuery, score, searchText } from "./match.js";
+import { shortError, withTimeout } from "../../core/chat.js";
+import { GOOD_MATCH, WEAK_MATCH, normalize, parseQuery, score, searchText } from "./match.js";
 import { hasLinkMetadata, metadataFromLink, normalizeTarget } from "./metadata.js";
 import { SEARCH_SOURCES, sourceForUrl } from "./sources/index.js";
 import { openYtDlp, ytdlpInfo } from "./ytdlp.js";
 
 const PER_SOURCE = 5;
+const SOURCE_TIMEOUT_MS = 10000;
+const LIST_PER_SOURCE = 3;
 
 export function isUrl(value) {
   try {
@@ -44,51 +46,86 @@ function playable(source, track, extra = {}) {
   };
 }
 
-// targets: önce resmî ad (Deezer), sonuç çıkmazsa kullanıcının yazdığı haliyle.
-async function* searchSources(targets, attempts, skipId) {
-  const weak = [];
-
-  for (const source of SEARCH_SOURCES) {
-    if (source.id === skipId) continue;
-
-    let found = 0;
-    let failed = false;
-    let matched = false;
-    for (const target of targets) {
-      const query = searchText(target);
-      let results;
-      try {
-        results = await source.search(query, PER_SOURCE, target);
-      } catch (e) {
-        attempts.fail(source.name, "ulaşılamadı", e);
-        failed = true;
-        break;
-      }
-      found += results.length;
-
-      const ranked = results
-        .map((track) => ({ track, s: score(track, target) }))
-        .sort((a, b) => b.s - a.s);
-      console.log(
-        `[müzik] ${source.name} "${query}":`,
-        ranked.slice(0, 3).map((r) => `${r.s.toFixed(2)} ${r.track.artist ?? "?"} - ${r.track.title}`)
-      );
-
-      weak.push(...ranked.filter((r) => r.s >= WEAK_MATCH && r.s < GOOD_MATCH).slice(0, 1).map((r) => ({ ...r, source })));
-
-      const good = ranked.filter((r) => r.s >= GOOD_MATCH).slice(0, 2);
-      if (good.length) {
-        matched = true;
-        for (const r of good) yield playable(source, r.track);
-        break;
-      }
-    }
-    if (!failed && !matched) attempts.fail(source.name, found ? "benzer şarkı yok" : "sonuç yok");
+// Tek kaynakta arar: önce resmî adla (Deezer), iyi sonuç çıkmazsa kullanıcının yazdığı haliyle.
+async function searchOne(source, targets) {
+  const out = [];
+  for (const target of targets) {
+    const results = await source.search(searchText(target), PER_SOURCE, target);
+    for (const track of results) out.push({ track, s: score(track, target), source });
+    if (out.some((r) => r.s >= GOOD_MATCH)) break;
   }
+  return out;
+}
 
+/**
+ * Tüm kaynaklarda aynı anda arar, sonuçları tek listede puana göre sıralar.
+ * Eşit puanda MUSIC_SOURCES sırası öne geçer. Yavaş/kapalı kaynak en fazla 10 sn bekletir.
+ */
+async function rankAll(targets, attempts, skipId) {
+  const sources = SEARCH_SOURCES.filter((s) => s.id !== skipId);
+  const settled = await Promise.allSettled(
+    sources.map((s) => withTimeout(searchOne(s, targets), SOURCE_TIMEOUT_MS, s.name))
+  );
+
+  const ranked = [];
+  settled.forEach((res, i) => {
+    const source = sources[i];
+    if (res.status === "rejected") return attempts.fail(source.name, "ulaşılamadı", res.reason);
+    if (!res.value.length) return attempts.fail(source.name, "sonuç yok");
+    if (!res.value.some((r) => r.s >= WEAK_MATCH)) attempts.fail(source.name, "benzer şarkı yok");
+    ranked.push(...res.value.map((r) => ({ ...r, order: i })));
+  });
+
+  // Aynı kayıt iki sorguda da gelmiş olabilir; aynı kaynakta aynı ad+sanatçı bir kez sayılır.
+  const seen = new Set();
+  const unique = ranked
+    .sort((a, b) => b.s - a.s || a.order - b.order)
+    .filter((r) => {
+      const key = `${r.source.id}|${normalize(r.track.title)}|${normalize(r.track.artist)}`;
+      if (seen.has(r.track.url) || seen.has(key)) return false;
+      seen.add(r.track.url).add(key);
+      return true;
+    });
+
+  console.log(
+    `[müzik] sıralama "${searchText(targets[0])}":`,
+    unique.slice(0, 5).map((r) => `${r.s.toFixed(2)} ${r.source.name}: ${r.track.artist ?? "?"} - ${r.track.title}`)
+  );
+  return unique;
+}
+
+async function* searchSources(targets, attempts, skipId) {
+  const ranked = await rankAll(targets, attempts, skipId);
+  for (const r of ranked.filter((r) => r.s >= GOOD_MATCH).slice(0, 6)) yield playable(r.source, r.track);
   // Hiçbir yerde iyi eşleşme çıkmadıysa en yakın sonuçları son çare olarak dene.
-  weak.sort((a, b) => b.s - a.s);
-  for (const r of weak.slice(0, 2)) yield playable(r.source, r.track, { weak: true });
+  for (const r of ranked.filter((r) => r.s >= WEAK_MATCH && r.s < GOOD_MATCH).slice(0, 3)) {
+    yield playable(r.source, r.track, { weak: true });
+  }
+}
+
+async function targetsFor(target) {
+  const official = await normalizeTarget(target);
+  console.log(`[müzik] hedef: ${official.artist ?? "?"} - ${official.title}${official.duration ? ` (${official.duration}s)` : ""}`);
+  return searchText(official) === searchText(target) ? [official] : [official, target];
+}
+
+/** !play list için: en iyi sonuçlar, aynı kaynaktan en fazla 3 tane (çeşitlilik için). */
+export async function searchList(query, attempts, limit = 5) {
+  const ranked = await rankAll(await targetsFor(parseQuery(query)), attempts, null);
+  const perSource = new Map();
+  const list = [];
+  // Zayıf eşleşmeler sadece yeterince iyi sonuç yoksa listeye girer.
+  const good = ranked.filter((r) => r.s >= GOOD_MATCH).length;
+  const minScore = good >= 3 ? GOOD_MATCH : WEAK_MATCH;
+  for (const r of ranked) {
+    if (r.s < minScore) break;
+    const n = perSource.get(r.source.id) ?? 0;
+    if (n >= LIST_PER_SOURCE) continue;
+    perSource.set(r.source.id, n + 1);
+    list.push(playable(r.source, r.track, { weak: r.s < GOOD_MATCH }));
+    if (list.length >= limit) break;
+  }
+  return list;
 }
 
 /**
@@ -143,8 +180,5 @@ export async function* findPlayable(input, attempts) {
     target = parseQuery(input);
   }
 
-  const official = await normalizeTarget(target);
-  console.log(`[müzik] hedef: ${official.artist ?? "?"} - ${official.title}${official.duration ? ` (${official.duration}s)` : ""}`);
-  const targets = searchText(official) === searchText(target) ? [official] : [official, target];
-  yield* searchSources(targets, attempts, skipId);
+  yield* searchSources(await targetsFor(target), attempts, skipId);
 }

@@ -1,14 +1,16 @@
 // Müzik modülü: ses kanalına katılma, arama/link ile çalma, kuyruk ve radyo komutları.
 import { shortError } from "../../core/chat.js";
 import { MusicSession } from "./session.js";
-import { findPlayable } from "./resolver.js";
+import { Attempts, findPlayable, isUrl, searchList } from "./resolver.js";
+import { displayTitle, formatDuration } from "./match.js";
 import { describeStation, radioItem, searchStations } from "./radio.js";
 import { findUserVoiceChannel, resolveChannelArg } from "./voice.js";
 import { SEARCH_SOURCES } from "./sources/index.js";
 
 export default function musicModule(bot) {
   const sessions = new Map(); // sunucu ID -> MusicSession
-  const lastStations = new Map(); // sunucu ID -> son !radio liste sonucu
+  const lastStations = new Map(); // sunucu ID -> son !radio list sonucu
+  const songLists = new Map(); // metin kanalı ID -> son !play list sonucu
 
   console.log(`[müzik] arama sırası: ${SEARCH_SOURCES.map((s) => s.name).join(" -> ")}`);
 
@@ -52,6 +54,38 @@ export default function musicModule(bot) {
       title: null,
       candidates: (attempts) => findPlayable(input, attempts),
     };
+  }
+
+  // Listeden seçilen kayıt önce çalınır; açılmazsa aynı arama normal yoldan yapılır.
+  function pickedItem(picked, query) {
+    return {
+      input: query,
+      title: displayTitle(picked),
+      async *candidates(attempts) {
+        yield picked;
+        for await (const c of findPlayable(query, attempts)) {
+          if (c.url !== picked.url) yield c;
+        }
+      },
+    };
+  }
+
+  async function showList(ctx, query) {
+    const attempts = new Attempts();
+    const items = await searchList(query, attempts, 5);
+    if (!items.length) {
+      const reasons = attempts.summary();
+      return ctx.reply(`🔎 "${query}" için sonuç bulunamadı.${reasons ? `\n(${reasons})` : ""}`);
+    }
+    songLists.set(ctx.channel.id, { query, items });
+
+    const lines = items.map((t, i) => {
+      const title = displayTitle(t);
+      const short = title.length > 60 ? title.slice(0, 57) + "…" : title;
+      const meta = [formatDuration(t.duration), t.sourceName].filter(Boolean).join(" · ");
+      return `**${i + 1}.** ${short}  \`${meta}\``;
+    });
+    return ctx.reply(`🔎 **${query}**\n${lines.join("\n")}\n▶️ Seçmek için: ${ctx.prefix}play 1-${items.length}`);
   }
 
   function nowPlayingLine(session) {
@@ -110,22 +144,42 @@ export default function musicModule(bot) {
       {
         name: "play",
         aliases: ["p"],
-        usage: "<link | şarkı adı>",
-        description: "Şarkı çalar ya da kuyruğa ekler. Bot bağlı değilse kanalına gelir.",
+        usage: "<link | şarkı adı> | list <şarkı adı> | <numara>",
+        description: "Şarkı çalar ya da kuyruğa ekler. list ile 5 sonuç listeler, numarayla seçilir.",
         async run(ctx) {
-          if (!ctx.arg) return ctx.reply(`Kullanım: ${ctx.prefix}play <link veya şarkı adı>`);
+          if (!ctx.arg) {
+            return ctx.reply(
+              `Kullanım: ${ctx.prefix}play <şarkı> | ${ctx.prefix}play list <şarkı> | ${ctx.prefix}play 2`
+            );
+          }
+          const [first, ...rest] = ctx.args;
+
+          // !play list <şarkı>: sonuçları listele, çalma.
+          if (["list", "liste"].includes(first.toLowerCase())) {
+            const query = rest.join(" ").trim();
+            if (!query) return ctx.reply(`Kullanım: ${ctx.prefix}play list <şarkı adı>`);
+            if (isUrl(query)) return ctx.reply("Liste için şarkı adı yaz, link doğrudan çalınabilir.");
+            return showList(ctx, query);
+          }
+
+          // !play 2: kanalda açık liste varsa ondan seç; yoksa normal arama.
+          const list = songLists.get(ctx.channel.id);
+          const pickIndex = /^\d+$/.test(ctx.arg) ? Number(ctx.arg) - 1 : -1;
+          const picked = list?.items[pickIndex];
+
           const session = sessionOf(ctx);
           if (!(await ensureVoice(ctx, session))) return;
 
-          const item = songItem(ctx.arg);
+          const item = picked ? pickedItem(picked, list.query) : songItem(ctx.arg);
+          const label = picked ? displayTitle(picked) : ctx.arg;
           if (session.current?.isRadio) {
             session.playNow(item);
-            return ctx.reply(`📻 Radyo kapatıldı. 🔎 Aranıyor: ${ctx.arg}`);
+            return ctx.reply(`📻 Radyo kapatıldı. ${picked ? "▶️" : "🔎 Aranıyor:"} ${label}`);
           }
           const wasIdle = session.state === "idle";
           const pos = session.enqueue(item);
-          if (wasIdle) return ctx.reply(`🔎 Aranıyor: ${ctx.arg}`);
-          return ctx.reply(`➕ Kuyruğa eklendi: ${ctx.arg} (sırada ${pos}.)`);
+          if (wasIdle) return picked ? null : ctx.reply(`🔎 Aranıyor: ${label}`);
+          return ctx.reply(`➕ Kuyruğa eklendi: ${label} (sırada ${pos}.)`);
         },
       },
       {
@@ -202,28 +256,28 @@ export default function musicModule(bot) {
       {
         name: "radio",
         aliases: ["radyo"],
-        usage: "<tür | istasyon> | liste <tür> | <numara>",
-        description: "İnternet radyosu çalar. Örn: !radio lofi, !radio liste jazz, !radio 2",
+        usage: "<tür | istasyon> | list <tür> | <numara>",
+        description: "İnternet radyosu çalar. Örn: !radio lofi, !radio list jazz, !radio 2",
         async run(ctx) {
           const key = keyOf(ctx);
           const [first, ...rest] = ctx.args;
           if (!first) {
             return ctx.reply(
-              `Kullanım: ${ctx.prefix}radio lofi | ${ctx.prefix}radio liste jazz | ${ctx.prefix}radio 2`
+              `Kullanım: ${ctx.prefix}radio lofi | ${ctx.prefix}radio list jazz | ${ctx.prefix}radio 2`
             );
           }
 
           if (/^\d+$/.test(first) && !rest.length) {
             const stations = lastStations.get(key);
             const index = Number(first) - 1;
-            if (!stations?.length) return ctx.reply(`Önce ${ctx.prefix}radio liste <tür> ile arama yap.`);
+            if (!stations?.length) return ctx.reply(`Önce ${ctx.prefix}radio list <tür> ile arama yap.`);
             if (!stations[index]) return ctx.reply(`1 ile ${stations.length} arasında bir numara yaz.`);
             return startRadio(ctx, stations, index);
           }
 
-          const listOnly = ["liste", "list"].includes(first.toLowerCase());
+          const listOnly = ["list", "liste"].includes(first.toLowerCase());
           const term = (listOnly ? rest : ctx.args).join(" ").trim();
-          if (!term) return ctx.reply(`Kullanım: ${ctx.prefix}radio liste <tür>`);
+          if (!term) return ctx.reply(`Kullanım: ${ctx.prefix}radio list <tür>`);
 
           let stations;
           try {
@@ -236,8 +290,11 @@ export default function musicModule(bot) {
           lastStations.set(key, stations);
 
           if (listOnly) {
-            const lines = stations.map((s, i) => `${i + 1}) ${describeStation(s)}`);
-            return ctx.reply(`📻 "${term}" istasyonları:\n${lines.join("\n")}\nÇalmak için: ${ctx.prefix}radio <numara>`);
+            const lines = stations.map((s, i) => {
+              const meta = [s.country, s.bitrate ? `${s.bitrate}kbps` : null].filter(Boolean).join(" · ");
+              return `**${i + 1}.** ${s.name}${meta ? `  \`${meta}\`` : ""}`;
+            });
+            return ctx.reply(`📻 **${term}**\n${lines.join("\n")}\n▶️ Seçmek için: ${ctx.prefix}radio 1-${stations.length}`);
           }
           return startRadio(ctx, stations, 0);
         },

@@ -2,20 +2,9 @@
 import { MediaPlayer } from "./revoicePatch.js";
 import { say, shortError, withTimeout } from "../../core/chat.js";
 import { Attempts } from "./resolver.js";
-import { cleanTitle } from "./match.js";
+import { displayTitle } from "./match.js";
 
 const START_TIMEOUT_MS = 30000;
-
-// Başlık zaten "Sanatçı - Şarkı" ise yükleyen adını ekleme; "(Official Video)" gibi ekleri at.
-function displayTitle(cand) {
-  if (cand.isRadio) return cand.title;
-  const title = cleanTitle(cand.title);
-  if (!title) return null;
-  if (!cand.artist || /\s[-–—]\s/.test(title) || title.toLowerCase().includes(cand.artist.toLowerCase())) {
-    return title;
-  }
-  return `${cand.artist} - ${title}`;
-}
 
 export class MusicSession {
   constructor(revoice) {

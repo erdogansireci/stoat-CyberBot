@@ -10,7 +10,7 @@ import youtube from "./youtube.js";
 
 export const ALL_SOURCES = [soundcloud, audius, bandcamp, mixcloud, archive, youtube];
 
-// Kelime aramasında MUSIC_SOURCES sırasıyla denenenler.
+// Kelime aramasında aranan kaynaklar (MUSIC_SOURCES sırası eşit puanda öncelik verir).
 export const SEARCH_SOURCES = config.musicSources
   .map((id) => ALL_SOURCES.find((s) => s.id === id))
   .filter(Boolean);

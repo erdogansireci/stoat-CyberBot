@@ -17,7 +17,7 @@ export const config = {
   prefix: process.env.PREFIX ?? "!",
   apiUrl: process.env.STOAT_API_URL ?? "https://stoat.chat/api",
 
-  // Kelime aramasında sırayla denenecek kaynaklar.
+  // Kelime aramasında aynı anda aranan kaynaklar; puan eşitse listede önce olan kazanır.
   // Kullanılabilir: soundcloud, audius, bandcamp, mixcloud, archive, youtube
   musicSources: list(process.env.MUSIC_SOURCES ?? "soundcloud,audius,bandcamp,mixcloud,archive"),
 

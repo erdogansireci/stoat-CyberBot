@@ -6,3 +6,4 @@ deploy/
 .claude/settings.local.json
 # Sunucu bilgileri içeren dahili kurulum yönergesi
 STOAT-BOT-YONERGE.md
+deploy-sunucu-bilgileri.txt

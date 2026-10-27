@@ -44,7 +44,14 @@ export async function normalizeTarget(target) {
         .map((t) => ({ t, s: score({ title: t.title, artist: t.artist?.name, duration: t.duration }, target) }))
         .sort((a, b) => b.s - a.s);
       const best = ranked.find((r) => r.s >= DEEZER_MATCH && acceptDeezer(r.t, target));
-      if (best) return { ...target, ...fromDeezerTrack(best.t), raw: target.raw };
+      if (best) {
+        const official = { ...target, ...fromDeezerTrack(best.t), raw: target.raw };
+        // Aynı şarkının albüm/radio edit gibi diğer sürümlerinin süreleri de geçerli sayılır.
+        official.durations = ranked
+          .filter((r) => r.s >= DEEZER_MATCH && r.t.artist?.name === best.t.artist?.name && r.t.duration)
+          .map((r) => r.t.duration);
+        return official;
+      }
     } catch (e) {
       console.warn("[deezer]", shortError(e));
       break;

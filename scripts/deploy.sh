@@ -1,18 +1,37 @@
 #!/usr/bin/env bash
 # deploy/ klasörünü hazırlar, sunucuya gönderir ve botu yeniden derleyip başlatır.
 # Kullanım: ./scripts/deploy.sh
-# Sunucu bilgileri her seferinde sorulur; son girilenler .deploy.local dosyasında
-# (git'e girmez) hatırlanır ve Enter'a basınca kullanılır.
+# Bu klasörde deploy-sunucu-bilgileri.txt varsa sorular oradan otomatik doldurulur
+# (biçim: soruların aynısı, "soru: cevap"). Yoksa sorulur; son girilenler
+# .deploy.local dosyasında hatırlanır. İkisi de git'e girmez. Şifre hiçbir yerde tutulmaz.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOCAL_CFG="$ROOT/.deploy.local"
+INFO_FILE="$ROOT/scripts/deploy-sunucu-bilgileri.txt"
 
 DEPLOY_HOST=""
 DEPLOY_PORT="22"
 DEPLOY_DIR=""
 # shellcheck disable=SC1090
 [ -f "$LOCAL_CFG" ] && source "$LOCAL_CFG"
+
+FILE_HOST="" FILE_PORT="" FILE_DIR="" FILE_DEL=""
+if [ -f "$INFO_FILE" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case "$line" in *:*) ;; *) continue ;; esac
+    val="${line#*:}"
+    val="$(echo "$val" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    case "$line" in
+      "SSH (kullanici@sunucu)"*) FILE_HOST="$val" ;;
+      "SSH portu"*) FILE_PORT="${val:-22}" ;;
+      "Sunucudaki bot klasörü"*) FILE_DIR="$val" ;;
+      *silinsin*) FILE_DEL="$val" ;;
+    esac
+  done < "$INFO_FILE"
+  echo "Bilgiler dosyadan okunuyor: scripts/deploy-sunucu-bilgileri.txt"
+fi
 
 ask() {
   local prompt="$1" default="$2" answer
@@ -25,9 +44,20 @@ ask() {
   fi
 }
 
-DEPLOY_HOST="$(ask "SSH (kullanici@sunucu)" "$DEPLOY_HOST")"
-DEPLOY_PORT="$(ask "SSH portu" "$DEPLOY_PORT")"
-DEPLOY_DIR="$(ask "Sunucudaki bot klasörü" "$DEPLOY_DIR")"
+# Dosyada değer varsa onu kullanır, yoksa sorar.
+pick() {
+  local prompt="$1" from_file="$2" default="$3"
+  if [ -n "$from_file" ]; then
+    echo "$prompt: $from_file" >&2
+    echo "$from_file"
+  else
+    ask "$prompt" "$default"
+  fi
+}
+
+DEPLOY_HOST="$(pick "SSH (kullanici@sunucu)" "$FILE_HOST" "$DEPLOY_HOST")"
+DEPLOY_PORT="$(pick "SSH portu" "$FILE_PORT" "$DEPLOY_PORT")"
+DEPLOY_DIR="$(pick "Sunucudaki bot klasörü" "$FILE_DIR" "$DEPLOY_DIR")"
 
 if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_DIR" ]; then
   echo "HATA: sunucu ve klasör boş olamaz." >&2
@@ -38,7 +68,13 @@ printf 'DEPLOY_HOST=%q\nDEPLOY_PORT=%q\nDEPLOY_DIR=%q\n' \
   "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_DIR" > "$LOCAL_CFG"
 
 DELETE_ARGS=()
-read -rp "Sunucuda deploy/ içinde olmayan eski dosyalar silinsin mi? (.env korunur) [e/H]: " del
+DEL_PROMPT="Sunucuda deploy/ içinde olmayan eski dosyalar silinsin mi? (.env korunur) [e/H]"
+if [ -n "$FILE_DEL" ]; then
+  del="$FILE_DEL"
+  echo "$DEL_PROMPT: $del"
+else
+  read -rp "$DEL_PROMPT: " del
+fi
 if [[ "$del" =~ ^[eEyY]$ ]]; then
   DELETE_ARGS=(--delete --exclude .env)
 fi

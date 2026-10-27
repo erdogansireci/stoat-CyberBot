@@ -5,7 +5,7 @@ A music bot for Stoat (works with self-hosted servers). It plays songs from link
 ## Features
 
 - **Smart search:** cleans titles, checks the official name, and skips previews, remixes and covers unless you ask for them
-- **Free sources, no API keys:** SoundCloud → Audius → Bandcamp → Mixcloud → Internet Archive. If one source fails, the next one is tried
+- **Free sources, no API keys:** SoundCloud, Audius, Bandcamp, Mixcloud and Internet Archive are all searched at the same time, and the best result overall wins (official uploads get a bonus)
 - **Links:** links from the sources above play directly. Spotify, Deezer, Apple Music and YouTube links are searched by song name
 - **Internet radio:** about 50,000 stations via Radio-Browser
 - **Easy joining:** `!join` comes to your voice channel, and `!play` joins automatically
@@ -18,14 +18,15 @@ A music bot for Stoat (works with self-hosted servers). It plays songs from link
 |---|---|
 | `!join [name \| #channel \| ID]` | Joins your voice channel, or the one you name |
 | `!leave` | Leaves the voice channel |
-| `!play <link \| song>` (`!p`) | Plays a song or adds it to the queue |
+| `!play <link \| song>` (`!p`) | Plays the best match or adds it to the queue |
+| `!play list <song>` / `!play <n>` | Lists the top 5 results / plays result number n |
 | `!skip` | Skips the current song or radio |
 | `!stop` | Stops playback and clears the queue |
 | `!clear` | Clears the queue; the current song keeps playing |
 | `!volume [1-100 \| +10 \| -10]` (`!ses`) | Shows or sets the volume (kept across songs) |
 | `!queue` (`!q`) | Shows the current song and the queue |
 | `!radio <genre \| station>` | Plays the most popular matching station, e.g. `!radio lofi` |
-| `!radio liste <genre>` / `!radio <n>` | Lists the top 5 stations / plays station number n |
+| `!radio list <genre>` / `!radio <n>` | Lists the top 5 stations / plays station number n |
 | `!help` | Lists all commands |
 | `!version` (`!versiyon`) | Shows the bot version |
 | `!ping` | Checks that the bot is online |
@@ -39,7 +40,7 @@ Copy `.env.example` to `.env` and fill it in:
 | `STOAT_BOT_TOKEN` | Bot token (Stoat → Settings → My Bots) |
 | `STOAT_API_URL` | Your Stoat API URL (default `https://stoat.chat/api`) |
 | `PREFIX` | Command prefix (default `!`) |
-| `MUSIC_SOURCES` | Search order (default `soundcloud,audius,bandcamp,mixcloud,archive`; `youtube` is also available) |
+| `MUSIC_SOURCES` | Sources to search; order breaks ties (default `soundcloud,audius,bandcamp,mixcloud,archive`; `youtube` is also available) |
 | `YTDLP_COOKIES` | Optional YouTube cookie file, used only when `youtube` is enabled |
 
 Docker:

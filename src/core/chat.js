@@ -4,7 +4,7 @@ export async function say(channel, text) {
   try {
     await channel.sendMessage(noLinks(text));
   } catch (e) {
-    console.error("[say]", e?.message ?? e);
+    console.error("[say]", shortError(e));
   }
 }
 
@@ -13,8 +13,23 @@ export function noLinks(text) {
   return String(text).replace(/https?:\/\/(\S+)/g, "$1");
 }
 
+// API (axios) hataları istek başlıklarını, yani bot token'ını da içerir; sadece güvenli özeti al.
+function apiErrorSummary(e) {
+  if (!e?.isAxiosError && !e?.response?.status) return null;
+  const { method, url } = e.config ?? {};
+  const type = e.response?.data?.type;
+  return `API ${e.response?.status ?? "?"}${type ? ` ${type}` : ""} (${String(method ?? "").toUpperCase()} ${url ?? "?"})`;
+}
+
+// Log için güvenli hata metni: API hatalarında özet, diğerlerinde stack.
+export function describeError(e) {
+  return apiErrorSummary(e) ?? (e?.stack || String(e));
+}
+
 // Uzun hata çıktısından log için tek satırlık özet çıkarır.
 export function shortError(e) {
+  const api = apiErrorSummary(e);
+  if (api) return api;
   const msg = String(e?.message ?? e ?? "");
   const lines = msg.split("\n").map((x) => x.trim()).filter(Boolean);
   const line = lines.find((x) => x.includes("ERROR:")) ?? lines[0] ?? "bilinmeyen hata";

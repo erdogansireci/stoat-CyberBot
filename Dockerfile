@@ -12,4 +12,5 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY . .
-CMD ["npm", "start"]
+# npm yerine node: docker stop'un SIGTERM'i doğrudan bota gelsin, bot ses kanalından çıkıp kapansın.
+CMD ["node", "src/index.js"]

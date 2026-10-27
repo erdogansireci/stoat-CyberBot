@@ -1,4 +1,4 @@
-import { say, shortError } from "./chat.js";
+import { describeError, say, shortError } from "./chat.js";
 
 /**
  * Komutları modüllerden toplayıp mesajlara dağıtır.
@@ -70,7 +70,7 @@ export class CommandRouter {
     try {
       await cmd.run(ctx);
     } catch (e) {
-      console.error(`[komut ${name}]`, e);
+      console.error(`[komut ${name}]`, describeError(e));
       await ctx.reply(`⚠️ ${prefix}${name} çalışırken hata oldu: ${shortError(e).slice(0, 120)}`);
     }
   }

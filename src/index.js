@@ -6,6 +6,8 @@ import { createRequire } from "module";
 
 import { config } from "./config.js";
 import { CommandRouter } from "./core/commands.js";
+import { describeError } from "./core/chat.js";
+import { patchRevoice } from "./modules/music/revoicePatch.js";
 import musicModule from "./modules/music/index.js";
 
 const require = createRequire(import.meta.url);
@@ -16,11 +18,14 @@ if (!config.token) {
   process.exit(1);
 }
 
-// Beklenmeyen hatalar sadece loga yazılsın, bot çökmesin.
-process.on("unhandledRejection", (err) => console.error("[unhandledRejection]", err));
+// Beklenmeyen hatalar sadece loga yazılsın, bot çökmesin. Ham nesne basılmaz (token sızmasın).
+process.on("unhandledRejection", (err) => {
+  if (err?.handled) return;
+  console.error("[unhandledRejection]", describeError(err));
+});
 
 const client = new Client({ baseURL: config.apiUrl });
-const revoice = new Revoice(config.token, undefined, { baseURL: config.apiUrl });
+const revoice = patchRevoice(new Revoice(config.token, undefined, { baseURL: config.apiUrl }));
 
 // Modüllerin ortak kullandığı nesneler.
 const bot = { client, revoice, config };
@@ -57,6 +62,22 @@ client.on("ready", () => {
 });
 
 client.on("messageCreate", (message) => router.handle(message));
+
+// Docker durdururken (deploy, restart) SIGTERM gönderir. Modüller kendini temizlesin
+// (örn. ses kanalından çıkış), en fazla 5 sn beklenir. Modül şekli: { shutdown?() }.
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} alındı, kapanıyor...`);
+  await Promise.race([
+    Promise.allSettled(router.modules.map((m) => m.shutdown?.())),
+    new Promise((r) => setTimeout(r, 5000)),
+  ]);
+  process.exit(0);
+}
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => shutdown("SIGINT"));
 
 console.log("Bot başlatılıyor...");
 client.loginBot(config.token);

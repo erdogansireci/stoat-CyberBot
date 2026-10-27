@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url);
 const { MediaPlayer } = require("revoice.js");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("ffmpeg-static");
+import { shortError } from "../../core/chat.js";
 
 const rawStop = MediaPlayer.prototype.stop;
 
@@ -62,5 +63,28 @@ MediaPlayer.prototype.playStream = function patchedPlayStream(stream) {
     if (this.readyPlayPacket && !this.paused) return this.playOutPacket();
   });
 };
+
+/**
+ * revoice.join() API hatasını yutup asılı kalıyordu; hata "joinError" olayıyla iletilir ve
+ * token içeren ham axios hatası yerine kısa bir hata fırlatılır (err.code = API hata türü).
+ * Not: botlar join_call'da force_disconnect kullanamaz (sunucu "IsBot" ile reddeder).
+ */
+export function patchRevoice(revoice) {
+  const api = revoice.api;
+  const post = api.post.bind(api);
+  api.post = async (path, body, ...rest) => {
+    if (typeof path !== "string" || !path.endsWith("/join_call")) return post(path, body, ...rest);
+    try {
+      return await post(path, body, ...rest);
+    } catch (e) {
+      const err = new Error(`join_call başarısız: ${shortError(e)}`);
+      err.code = e?.response?.data?.type ?? null;
+      err.handled = true; // session.join zaten raporluyor; unhandledRejection tekrar loglamasın
+      revoice.emit("joinError", err);
+      throw err;
+    }
+  };
+  return revoice;
+}
 
 export { MediaPlayer };

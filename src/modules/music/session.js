@@ -1,10 +1,12 @@
 // Bir sunucudaki ses bağlantısı, kuyruk ve çalma durumu.
 import { MediaPlayer } from "./revoicePatch.js";
-import { say, shortError, withTimeout } from "../../core/chat.js";
+import { describeError, say, shortError, withTimeout } from "../../core/chat.js";
 import { Attempts } from "./resolver.js";
 import { displayTitle } from "./match.js";
 
 const START_TIMEOUT_MS = 30000;
+const JOIN_RETRIES = 5;
+const JOIN_RETRY_MS = 10000;
 
 export class MusicSession {
   constructor(revoice) {
@@ -43,14 +45,44 @@ export class MusicSession {
     return say(this.textChannel, text);
   }
 
-  async join(channelId, channelName) {
+  // revoice.join() API hatasında asılı kalır; patchRevoice'un "joinError" olayı onu hemen bitirir.
+  async #requestConnection(channelId) {
+    // Eski, yarım kalmış bağlantı kaydı varsa revoice yeni katılımı reddeder.
+    this.revoice.connections.delete(channelId);
+    let onJoinError;
+    const failed = new Promise((_, reject) => {
+      onJoinError = reject;
+      this.revoice.once?.("joinError", reject);
+    });
+    try {
+      return await withTimeout(Promise.race([this.revoice.join(channelId), failed]), 15000, "join_call");
+    } finally {
+      this.revoice.off?.("joinError", onJoinError);
+    }
+  }
+
+  /**
+   * onWait: bot kapanırken kanaldan çıkamadıysa sunucu onu bir süre hâlâ içeride sanar
+   * (AlreadyConnected). Botlar bunu zorla kapatamadığı için ses sunucusu eski bağlantıyı
+   * düşürene kadar beklenip tekrar denenir; ilk beklemede onWait çağrılır.
+   */
+  async join(channelId, channelName, { onWait } = {}) {
     if (this.connected && this.channelId === channelId) return false;
     if (this.connected) await this.leave();
 
-    // Eski, yarım kalmış bağlantı kaydı varsa revoice yeni katılımı reddeder.
-    this.revoice.connections.delete(channelId);
+    let connection;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        connection = await this.#requestConnection(channelId);
+        break;
+      } catch (e) {
+        if (e?.code !== "AlreadyConnected" || attempt >= JOIN_RETRIES) throw e;
+        if (attempt === 1) await onWait?.();
+        console.warn(`[join] AlreadyConnected, ${JOIN_RETRY_MS / 1000} sn sonra tekrar (${attempt}/${JOIN_RETRIES})`);
+        await new Promise((r) => setTimeout(r, JOIN_RETRY_MS));
+      }
+    }
 
-    const connection = await withTimeout(this.revoice.join(channelId), 15000, "join_call");
     await withTimeout(
       new Promise((resolve) => connection.once("join", resolve)),
       15000,
@@ -159,7 +191,7 @@ export class MusicSession {
         return;
       }
     } catch (e) {
-      console.error("[playNext]", e);
+      console.error("[playNext]", describeError(e));
       attempts.fail("bot", "beklenmeyen hata", e);
     }
 

@@ -1,11 +1,21 @@
 // Müzik modülü: ses kanalına katılma, arama/link ile çalma, kuyruk ve radyo komutları.
-import { shortError } from "../../core/chat.js";
+import { describeError, shortError } from "../../core/chat.js";
 import { MusicSession } from "./session.js";
 import { Attempts, findPlayable, isUrl, searchList } from "./resolver.js";
 import { displayTitle, formatDuration } from "./match.js";
 import { describeStation, radioItem, searchStations } from "./radio.js";
 import { findUserVoiceChannel, resolveChannelArg } from "./voice.js";
 import { SEARCH_SOURCES } from "./sources/index.js";
+
+// Stoat join_call hata türlerinin kullanıcıya gösterilecek karşılıkları.
+const JOIN_ERRORS = {
+  AlreadyConnected: "önceki bağlantı hâlâ açık görünüyor, biraz sonra tekrar dene.",
+  NotAVoiceChannel: "bu bir ses kanalı değil.",
+  CannotJoinCall: "kanal dolu.",
+  MissingPermission: "bu kanala bağlanma yetkim yok.",
+  LiveKitUnavailable: "sunucuda ses servisi çalışmıyor.",
+  UnknownNode: "sunucunun ses ayarı (node) bulunamadı.",
+};
 
 export default function musicModule(bot) {
   const sessions = new Map(); // sunucu ID -> MusicSession
@@ -26,11 +36,14 @@ export default function musicModule(bot) {
 
   async function joinChannel(ctx, session, channel) {
     try {
-      const joined = await session.join(channel.id, channel.name);
+      const joined = await session.join(channel.id, channel.name, {
+        onWait: () => ctx.reply("⏳ Önceki ses bağlantım hâlâ açık görünüyor, kapanınca giriyorum (en fazla ~40 sn)."),
+      });
       return joined ? "joined" : "already";
     } catch (e) {
-      console.error("[join]", e);
-      await ctx.reply(`⚠️ ${channel.name} kanalına bağlanamadım (${shortError(e).slice(0, 80)}).`);
+      console.error("[join]", describeError(e));
+      const reason = JOIN_ERRORS[e?.code] ?? shortError(e).slice(0, 80);
+      await ctx.reply(`⚠️ ${channel.name} kanalına bağlanamadım: ${reason}`);
       return null;
     }
   }
@@ -107,6 +120,10 @@ export default function musicModule(bot) {
 
   return {
     name: "Müzik",
+    // Bot kapanırken ses kanallarından çık; yoksa sunucu botu bir süre hâlâ bağlı sanır.
+    async shutdown() {
+      await Promise.allSettled([...sessions.values()].filter((s) => s.connected).map((s) => s.leave()));
+    },
     commands: [
       {
         name: "join",
@@ -283,7 +300,7 @@ export default function musicModule(bot) {
           try {
             stations = await searchStations(term);
           } catch (e) {
-            console.error("[radio]", e);
+            console.error("[radio]", describeError(e));
             return ctx.reply("⚠️ Radyo rehberine şu an ulaşılamıyor, birazdan tekrar dene.");
           }
           if (!stations.length) return ctx.reply(`📻 "${term}" için istasyon bulunamadı.`);

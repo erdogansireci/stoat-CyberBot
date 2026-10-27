@@ -50,10 +50,6 @@ docker compose logs -f --tail 30
 
 Local: Node.js 20+ and `yt-dlp` in `PATH`, then `npm install && npm start`.
 
-## Versioning
-
-The version lives in `package.json` and is shown by `!version`. To bump it, run `npm version 1.3.0 --no-git-tag-version`.
-
 ## Adding a module
 
 Create `src/modules/<name>/index.js`. It should return `{ name, commands: [{ name, usage, description, run(ctx) }] }`. Then register it in `src/index.js` with `router.use(myModule(bot))`. It appears in `!help` automatically.

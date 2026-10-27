@@ -8,13 +8,20 @@ const NOISE_IN_BRACKETS =
 const TRAILING_NOISE = /\s+(\||\/\/|–|—)\s+.*$/;
 const FEAT = /\s+(feat\.?|ft\.?|featuring|prod\.?)\s+.*$/i;
 
-// Sorguda yoksa sonucun puanını düşüren kelimeler (yanlış versiyonlar).
-const BAD_VERSIONS = [
-  "remix", "cover", "karaoke", "nightcore", "sped up", "speed up", "slowed", "reverb",
-  "mashup", "mash up", "rework", "bootleg", "instrumental", "midi", "8d", "live",
-  "acoustic", "tribute", "type beat", "flip", "vip", "edit", "piano", "lofi", "lo-fi",
-  "loop", "extended", "megamix", "medley", "parody", "reaction", "tutorial",
+// Sorguda yoksa sonucun puanını düşüren kelimeler.
+// Hafif: aynı şarkının başka bir yorumu/sürümü (orijinal öne geçsin ama bunlar da iyi sayılsın).
+const OTHER_VERSIONS = [
+  "remix", "cover", "live", "acoustic", "edit", "extended", "instrumental", "piano",
+  "lofi", "lo-fi", "rework", "bootleg", "tribute", "vip", "flip", "loop",
 ];
+// Ağır: şarkının kendisi değil (bozulmuş, kesilmiş ya da başka içerik).
+const NOT_THE_SONG = [
+  "karaoke", "nightcore", "sped up", "speed up", "slowed", "reverb", "8d", "midi",
+  "mashup", "mash up", "megamix", "medley", "parody", "reaction", "tutorial", "type beat",
+];
+const BAD_VERSIONS = [...OTHER_VERSIONS, ...NOT_THE_SONG];
+const LIGHT_PENALTY = 0.2;
+const HEAVY_PENALTY = 0.4;
 
 // Metinde geçen versiyon kelimeleri (remix, live, cover...).
 export function versionWords(text) {
@@ -102,7 +109,11 @@ export function score(candidate, target) {
   const wanted = `${target.raw ?? ""} ${target.title} ${target.artist ?? ""}`;
   const wantedVersions = versionWords(wanted);
   const unwanted = versionWords(candidate.title).filter((w) => !wantedVersions.includes(w));
-  s -= Math.min(unwanted.length * 0.4, 0.5);
+  const penalty = unwanted.reduce((sum, w) => sum + (NOT_THE_SONG.includes(w) ? HEAVY_PENALTY : LIGHT_PENALTY), 0);
+  s -= Math.min(penalty, 0.5);
+
+  // Bambaşka şarkı: sanatçı tutsa bile şarkı adı büyük ölçüde örtüşmüyorsa otomatik seçilmesin.
+  if (titleScore < 0.5) s -= 0.3;
 
   // Hedefte olmayan fazladan kelimeler için hafif ceza.
   const targetTokens = new Set(tokens(`${target.title} ${target.artist ?? ""}`));

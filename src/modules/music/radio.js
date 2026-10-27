@@ -1,5 +1,6 @@
 // İnternet radyoları: Radio-Browser (https://www.radio-browser.info), ücretsiz ve anahtarsız.
 import { fetchJson, openHttpAudio } from "../../core/http.js";
+import { openYtDlp } from "./ytdlp.js";
 
 const MIRRORS = ["de1", "de2", "fi1", "nl1"].map((m) => `https://${m}.api.radio-browser.info`);
 
@@ -25,7 +26,36 @@ function query(params) {
   }).toString();
 }
 
-/** Önce etikete (lofi, jazz, rock...), sonra istasyon adına göre arar; en çok oy alanlar önde. */
+const CHECK_TIMEOUT_MS = 6000;
+
+// HLS (.m3u8) yayınlar (Türk radyolarının çoğu) yt-dlp ile, diğerleri doğrudan açılır.
+// HLS işaretli olmayıp HLS çalma listesi dönen istasyonlar da yt-dlp'ye düşer.
+async function openStation(station, timeoutMs = 15000) {
+  if (station.hls) return openYtDlp(station.url, { timeoutMs });
+  try {
+    return await openHttpAudio(station.url, { timeoutMs });
+  } catch (e) {
+    if (!String(e?.message).includes("HLS")) throw e;
+    return openYtDlp(station.url, { timeoutMs });
+  }
+}
+
+// Yayın gerçekten ses veriyor mu (ölü, web sayfası dönen ya da cevap vermeyen istasyonları eler).
+async function isLive(station) {
+  try {
+    const h = await openStation(station, CHECK_TIMEOUT_MS);
+    h.close();
+    return true;
+  } catch (e) {
+    console.warn(`[radyo] açılmadı, listeden çıkarıldı: ${station.name} -> ${e?.message ?? e}`);
+    return false;
+  }
+}
+
+/**
+ * Önce etikete (lofi, jazz, rock...), sonra istasyon adına göre arar; en çok oy alanlar önde.
+ * İlk 2×limit istasyon aynı anda denenir, yayın verenlerden ilk `limit` tanesi döner.
+ */
 export async function searchStations(term, limit = 6) {
   const t = term.trim();
   const [byTag, byName] = await Promise.all([
@@ -34,10 +64,10 @@ export async function searchStations(term, limit = 6) {
   ]);
 
   const seen = new Set();
-  return [...byTag, ...byName]
-    .filter((s) => s.url_resolved && !s.hls && !seen.has(s.stationuuid) && seen.add(s.stationuuid))
+  const stations = [...byTag, ...byName]
+    .filter((s) => s.url_resolved && !seen.has(s.stationuuid) && seen.add(s.stationuuid))
     .sort((a, b) => b.votes - a.votes)
-    .slice(0, limit)
+    .slice(0, limit * 2)
     .map((s) => ({
       id: s.stationuuid,
       name: s.name.trim(),
@@ -45,7 +75,11 @@ export async function searchStations(term, limit = 6) {
       codec: s.codec,
       bitrate: s.bitrate,
       url: s.url_resolved,
+      hls: !!s.hls,
     }));
+
+  const live = await Promise.all(stations.map(isLive));
+  return stations.filter((_, i) => live[i]).slice(0, limit);
 }
 
 export function describeStation(s) {
@@ -67,7 +101,7 @@ export function radioItem(stations, startIndex = 0) {
           sourceName: "Radyo",
           attemptName: s.name,
           isRadio: true,
-          open: () => openHttpAudio(s.url),
+          open: () => openStation(s),
         };
       }
     },

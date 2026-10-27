@@ -5,6 +5,7 @@ import { Attempts } from "./resolver.js";
 import { displayTitle } from "./match.js";
 
 const START_TIMEOUT_MS = 30000;
+const STALL_MS = 30000;
 const JOIN_RETRIES = 5;
 const JOIN_RETRY_MS = 10000;
 
@@ -204,6 +205,27 @@ export class MusicSession {
     this.playNext();
   }
 
+  // Çalarken bağlantı takılırsa (indirme durur ama kapanmaz) bot sonsuza dek sessiz kalıyordu.
+  // STALL_MS boyunca hiç ses çalınmazsa sıradakine geçilir.
+  #watchStall(gen, player, title) {
+    let last = player.playedOutSamples;
+    let lastChange = Date.now();
+    const timer = setInterval(() => {
+      if (gen !== this.gen) return clearInterval(timer);
+      if (player.playedOutSamples !== last || player.paused) {
+        last = player.playedOutSamples;
+        lastChange = Date.now();
+        return;
+      }
+      if (Date.now() - lastChange < STALL_MS) return;
+      clearInterval(timer);
+      console.warn(`[müzik] ${STALL_MS / 1000} sn ses gelmedi, geçiliyor: ${title}`);
+      this.notify(`⚠️ ${title} takıldı, sıradakine geçiyorum.`);
+      this.#halt();
+      this.playNext();
+    }, 5000);
+  }
+
   #start(gen, item, cand, handle) {
     const player = this.player;
     const title = displayTitle(cand) || item.input;
@@ -229,7 +251,10 @@ export class MusicSession {
       this.#halt();
       this.playNext();
     }, START_TIMEOUT_MS);
-    player.once("startplay", () => clearTimeout(watchdog));
+    player.once("startplay", () => {
+      clearTimeout(watchdog);
+      this.#watchStall(gen, player, title);
+    });
 
     this.#applyVolume();
     player.playStream(handle.stream);

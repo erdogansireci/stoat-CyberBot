@@ -31,8 +31,21 @@ export async function finalUrl(url) {
   return res.url;
 }
 
+const PLAYLIST_TYPE = /mpegurl|x-scpls|audio\/x-pls|\bm3u\b/i;
+
+// .m3u / .pls çalma listesinin içindeki ilk ses adresi (radyolarda sık görülür).
+function firstPlaylistUrl(text) {
+  if (text.includes("#EXT-X-")) throw new Error("HLS yayını desteklenmiyor");
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.trim().match(/^(?:File\d+=)?(https?:\/\/\S+)/i);
+    if (m) return m[1];
+  }
+  throw new Error("çalma listesinde adres yok");
+}
+
 // Doğrudan ses dosyası/yayını açar. Dönen handle.close() bağlantıyı keser.
-export async function openHttpAudio(url, { timeoutMs = 15000 } = {}) {
+// Çalma listesi (.m3u/.pls) dönerse içindeki adres açılır.
+export async function openHttpAudio(url, { timeoutMs = 15000, depth = 0 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -48,10 +61,18 @@ export async function openHttpAudio(url, { timeoutMs = 15000 } = {}) {
   }
 
   const type = res.headers.get("content-type") ?? "";
-  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok || !res.body) {
+    controller.abort();
+    throw new Error(`HTTP ${res.status}`);
+  }
   if (type.includes("text/html")) {
     controller.abort();
     throw new Error(`ses değil (${type})`);
+  }
+  if (PLAYLIST_TYPE.test(type) || /\.(m3u|pls)(\?|$)/i.test(new URL(res.url).pathname)) {
+    if (depth >= 2) throw new Error("iç içe çalma listesi");
+    const text = (await res.text()).slice(0, 20000);
+    return openHttpAudio(firstPlaylistUrl(text), { timeoutMs, depth: depth + 1 });
   }
 
   const stream = Readable.fromWeb(res.body);

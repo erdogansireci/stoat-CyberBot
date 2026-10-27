@@ -1,7 +1,8 @@
-// revoice.js MediaPlayer için iki düzeltme:
+// revoice.js MediaPlayer için düzeltmeler:
 // 1) stop(): ffmpeg bitmiş ve süreç referansı null ise kill() çağrısı çöküyordu.
 // 2) playStream(): durdurulan eski ffmpeg'in geç gelen verisi/olayları yeni şarkıya
 //    karışıp onu erken bitirebiliyordu. Her çalmaya bir nesil numarası verip eskileri yok sayıyoruz.
+// 3) Tampon sınırı: çözülen ses sınırsızca belleğe doluyordu (aşağıda BUFFER_HIGH_SEC).
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const { MediaPlayer } = require("revoice.js");
@@ -13,6 +14,7 @@ const rawStop = MediaPlayer.prototype.stop;
 
 MediaPlayer.prototype.stop = function patchedStop(init = true) {
   this._gen = (this._gen ?? 0) + 1;
+  this._out = null;
   const proc = this.fProc;
   this.fProc = null;
   this.ffmpegFinished = false;
@@ -57,11 +59,32 @@ MediaPlayer.prototype.playStream = function patchedPlayStream(stream) {
     });
 
   this.fProc = proc;
-  proc.pipe().on("data", (chunk) => {
+  const out = proc.pipe();
+  this._out = out;
+  out.on("data", (chunk) => {
     if (!current()) return;
     this.chunks.push(chunk);
+    // Tampon dolduysa ffmpeg'i (ve dolayısıyla indirmeyi) bekletiyoruz; playOutPacket açar.
+    if (bufferedSeconds(this) >= BUFFER_HIGH_SEC) out.pause();
     if (this.readyPlayPacket && !this.paused) return this.playOutPacket();
   });
+};
+
+// ffmpeg sesi gerçek zamandan çok hızlı çözüyor; sınır olmasa 4 dk'lık şarkı ~45 MB,
+// 3 saatlik mix ~2 GB olarak belleğe dolar. En fazla BUFFER_HIGH_SEC kadar ses biriktirilir.
+const BUFFER_HIGH_SEC = 15;
+const BUFFER_LOW_SEC = 5;
+
+function bufferedSeconds(player) {
+  let bytes = 0;
+  for (const c of player.chunks) bytes += c.length;
+  return bytes / (player.SAMPLE_RATE * player.CHANNELS * 2);
+}
+
+const rawPlayOutPacket = MediaPlayer.prototype.playOutPacket;
+MediaPlayer.prototype.playOutPacket = function patchedPlayOutPacket() {
+  if (this._out?.isPaused() && bufferedSeconds(this) <= BUFFER_LOW_SEC) this._out.resume();
+  return rawPlayOutPacket.call(this);
 };
 
 /**

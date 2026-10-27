@@ -4,7 +4,14 @@ import { MusicSession } from "./session.js";
 import { Attempts, findPlayable, isUrl, searchList } from "./resolver.js";
 import { displayTitle, formatDuration } from "./match.js";
 import { describeStation, radioItem, searchStations } from "./radio.js";
-import { findUserVoiceChannel, resolveChannelArg } from "./voice.js";
+import {
+  describeVoiceState,
+  findUserVoiceChannel,
+  logVoiceEvents,
+  onlyVoiceChannel,
+  resolveChannelArg,
+  voiceChannelNames,
+} from "./voice.js";
 import { SEARCH_SOURCES } from "./sources/index.js";
 
 // Stoat join_call hata türlerinin kullanıcıya gösterilecek karşılıkları.
@@ -23,6 +30,7 @@ export default function musicModule(bot) {
   const songLists = new Map(); // metin kanalı ID -> son !play list sonucu
 
   console.log(`[müzik] arama sırası: ${SEARCH_SOURCES.map((s) => s.name).join(" -> ")}`);
+  logVoiceEvents(bot.client);
 
   const keyOf = (ctx) => ctx.server?.id ?? ctx.channel.id;
 
@@ -48,14 +56,24 @@ export default function musicModule(bot) {
     }
   }
 
+  // Komutu yazanın ses kanalı; bulunamazsa sunucudaki tek ses kanalı. Hiçbiri yoksa
+  // kanal adlarını önerir ve tanı için botun gördüğü ses durumunu loglar.
+  async function channelForAuthor(ctx) {
+    const channel = findUserVoiceChannel(ctx.server, ctx.authorId) ?? onlyVoiceChannel(ctx.server);
+    if (channel) return channel;
+
+    console.warn(`[ses-durumu] ${ctx.authorId} bulunamadı. Görülen: ${describeVoiceState(ctx.server)}`);
+    const names = voiceChannelNames(ctx.server);
+    const hint = names.length ? `\nKanallar: ${names.join(", ")} → örn. ${ctx.prefix}join ${names[0]}` : "";
+    await ctx.reply(`Bulunduğun ses kanalını göremedim, kanal adıyla çağır.${hint}`);
+    return null;
+  }
+
   // Bot bağlı değilse komutu yazanın ses kanalına katılır.
   async function ensureVoice(ctx, session) {
     if (session.connected) return true;
-    const channel = findUserVoiceChannel(ctx.server, ctx.authorId);
-    if (!channel) {
-      await ctx.reply(`Önce bir ses kanalına gir ya da ${ctx.prefix}join <kanal adı> yaz.`);
-      return false;
-    }
+    const channel = await channelForAuthor(ctx);
+    if (!channel) return false;
     const res = await joinChannel(ctx, session, channel);
     if (res === "joined") await ctx.reply(`✅ ${channel.name} kanalına geldim.`);
     return !!res;
@@ -136,10 +154,8 @@ export default function musicModule(bot) {
             channel = resolveChannelArg(ctx.server, ctx.bot.client, ctx.arg);
             if (!channel) return ctx.reply(`"${ctx.arg}" adında bir ses kanalı bulamadım.`);
           } else {
-            channel = findUserVoiceChannel(ctx.server, ctx.authorId);
-            if (!channel) {
-              return ctx.reply(`Bir ses kanalında değilsin. ${ctx.prefix}join <kanal adı> ile de çağırabilirsin.`);
-            }
+            channel = await channelForAuthor(ctx);
+            if (!channel) return;
           }
           const res = await joinChannel(ctx, session, channel);
           if (res === "joined") return ctx.reply(`✅ ${channel.name} kanalına bağlandım.`);

@@ -4,11 +4,10 @@ import { config } from "../../../config.js";
 import soundcloud from "./soundcloud.js";
 import audius from "./audius.js";
 import bandcamp from "./bandcamp.js";
-import mixcloud from "./mixcloud.js";
 import archive from "./archive.js";
 import youtube from "./youtube.js";
 
-export const ALL_SOURCES = [soundcloud, audius, bandcamp, mixcloud, archive, youtube];
+export const ALL_SOURCES = [soundcloud, audius, bandcamp, archive, youtube];
 
 // Kelime aramasında aranan kaynaklar (MUSIC_SOURCES sırası eşit puanda öncelik verir).
 export const SEARCH_SOURCES = config.musicSources

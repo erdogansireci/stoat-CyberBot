@@ -5,7 +5,7 @@ A music bot for Stoat (works with self-hosted servers). It plays songs from link
 ## Features
 
 - **Smart search:** cleans titles, checks the official name, and skips previews, remixes and covers unless you ask for them
-- **Free sources, no API keys:** SoundCloud, Audius, Bandcamp, Mixcloud and Internet Archive are all searched at the same time, and the best result overall wins (official uploads get a bonus)
+- **Free sources, no API keys:** SoundCloud, Audius, Bandcamp and Internet Archive are all searched at the same time, and the best result overall wins (official uploads get a bonus)
 - **Links:** links from the sources above play directly. Spotify, Deezer, Apple Music and YouTube links are searched by song name
 - **Internet radio:** about 50,000 stations via Radio-Browser
 - **Easy joining:** `!join` comes to your voice channel, and `!play` joins automatically
@@ -40,7 +40,7 @@ Copy `.env.example` to `.env` and fill it in:
 | `STOAT_BOT_TOKEN` | Bot token (Stoat → Settings → My Bots) |
 | `STOAT_API_URL` | Your Stoat API URL (default `https://stoat.chat/api`) |
 | `PREFIX` | Command prefix (default `!`) |
-| `MUSIC_SOURCES` | Sources to search; order breaks ties (default `soundcloud,audius,bandcamp,mixcloud,archive`; `youtube` is also available) |
+| `MUSIC_SOURCES` | Sources to search; order breaks ties (default `soundcloud,audius,bandcamp,archive`; `youtube` is also available) |
 | `YTDLP_COOKIES` | Optional YouTube cookie file, used only when `youtube` is enabled |
 
 Docker:

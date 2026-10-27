@@ -1,6 +1,6 @@
 {
   "name": "stoat-cyberbot",
-  "version": "1.5.1",
+  "version": "1.6.1",
   "main": "index.js",
   "type": "module",
   "scripts": {

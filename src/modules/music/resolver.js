@@ -9,6 +9,8 @@ const PER_SOURCE = 6;
 const SOURCE_TIMEOUT_MS = 10000;
 const LIST_SIZE = 6;
 const LIST_PER_SOURCE = 3;
+const CHECK_POOL = 10; // listeden önce açılma kontrolü yapılan aday sayısı
+const CHECK_TIMEOUT_MS = 6000;
 
 export function isUrl(value) {
   try {
@@ -110,20 +112,32 @@ async function targetsFor(target) {
   return searchText(official) === searchText(target) ? [official] : [official, target];
 }
 
+// Adayın sesi gerçekten açılıyor mu (kısıtlı, satın alınmalı, bölge engelli kayıtları eler).
+async function canOpen(p) {
+  const pending = p.open();
+  try {
+    const handle = await withTimeout(pending, CHECK_TIMEOUT_MS, "kontrol");
+    handle.close();
+    return true;
+  } catch (e) {
+    // Zaman aşımından sonra açılırsa sızmasın.
+    pending.then((h) => h.close(), () => {});
+    console.warn(`[liste] açılamadı, listeden çıkarıldı: ${p.sourceName} "${p.title}" -> ${shortError(e)}`);
+    return false;
+  }
+}
+
 /**
- * !play list için en iyi sonuçlar. Önce çeşitlilik (aynı kaynaktan en fazla 3) ve iyi
- * eşleşmeler; liste dolmazsa aynı kaynaktan fazlası ve yakın eşleşmelerle tamamlanır.
+ * !play list için en iyi sonuçlar. Seçim önceliği: çeşitlilik (aynı kaynaktan en fazla 3)
+ * ve iyi eşleşmeler; sonra aynı kaynaktan fazlası ve yakın eşleşmeler. En iyi
+ * CHECK_POOL aday aynı anda açılmayı dener, açılabilen ilk `limit` tanesi listelenir.
  */
 export async function searchList(query, attempts, limit = LIST_SIZE) {
   const ranked = (await rankAll(await targetsFor(parseQuery(query)), attempts, null))
     .filter((r) => r.s >= WEAK_MATCH);
-  const picked = new Set();
+  const pool = [];
   const perSource = new Map();
 
-  const take = (r) => {
-    picked.add(r);
-    perSource.set(r.source.id, (perSource.get(r.source.id) ?? 0) + 1);
-  };
   const passes = [
     (r) => r.s >= GOOD_MATCH && (perSource.get(r.source.id) ?? 0) < LIST_PER_SOURCE,
     (r) => r.s >= GOOD_MATCH,
@@ -131,14 +145,26 @@ export async function searchList(query, attempts, limit = LIST_SIZE) {
   ];
   for (const ok of passes) {
     for (const r of ranked) {
-      if (picked.size >= limit) break;
-      if (!picked.has(r) && ok(r)) take(r);
+      if (pool.length >= CHECK_POOL) break;
+      if (!pool.includes(r) && ok(r)) {
+        pool.push(r);
+        perSource.set(r.source.id, (perSource.get(r.source.id) ?? 0) + 1);
+      }
     }
   }
 
+  // Hepsi aynı anda denenir; öncelik sırasıyla `limit` tanesi kesinleşince geri kalan beklenmez.
+  const items = pool.map((r) => playable(r.source, r.track, { weak: r.s < GOOD_MATCH }));
+  const checks = items.map(canOpen);
+  const chosen = [];
+  for (let i = 0; i < pool.length && chosen.length < limit; i++) {
+    if (await checks[i]) chosen.push(pool[i]);
+  }
+
+  // Seçim önceliğine göre alınanlar listede puan sırasıyla gösterilir.
   return ranked
-    .filter((r) => picked.has(r))
-    .map((r) => playable(r.source, r.track, { weak: r.s < GOOD_MATCH }));
+    .filter((r) => chosen.includes(r))
+    .map((r) => items[pool.indexOf(r)]);
 }
 
 /**
@@ -150,6 +176,11 @@ export async function* findPlayable(input, attempts) {
   let skipId = null;
 
   if (isUrl(input)) {
+    // Mixcloud kayıtları neredeyse hep lisans kısıtlı; genel çözücüyle de denenmez.
+    if (/(^|\.)mixcloud\.com$/i.test(new URL(input).hostname)) {
+      attempts.fail("Mixcloud", "desteklenmiyor");
+      return;
+    }
     const source = sourceForUrl(input);
     let direct = null;
     if (source) {

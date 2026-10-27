@@ -18,8 +18,8 @@ export const config = {
   apiUrl: process.env.STOAT_API_URL ?? "https://stoat.chat/api",
 
   // Kelime aramasında aynı anda aranan kaynaklar; puan eşitse listede önce olan kazanır.
-  // Kullanılabilir: soundcloud, audius, bandcamp, mixcloud, archive, youtube
-  musicSources: list(process.env.MUSIC_SOURCES ?? "soundcloud,audius,bandcamp,mixcloud,archive"),
+  // Kullanılabilir: soundcloud, audius, bandcamp, archive, youtube
+  musicSources: list(process.env.MUSIC_SOURCES ?? "soundcloud,audius,bandcamp,archive"),
 
   // YouTube için isteğe bağlı cookie dosyası (Netscape formatı). Boşsa cookie kullanılmaz.
   ytdlpCookies: process.env.YTDLP_COOKIES || null,

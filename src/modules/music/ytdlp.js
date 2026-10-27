@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createRequire } from "module";
 import { config } from "../../config.js";
 import { shortError } from "../../core/chat.js";
@@ -46,7 +49,7 @@ export function runYtDlp(args, { timeoutMs = 20000 } = {}) {
 }
 
 function toTrack(e) {
-  // Mixcloud gibi kaynaklarda "artist" alanı mixteki tüm sanatçıların listesi olabiliyor.
+  // Bazı kaynaklarda "artist" alanı kayıttaki tüm sanatçıların listesi olabiliyor.
   const artist = e.artist && e.artist.length <= 40 ? e.artist : null;
   return {
     title: e.title ?? e.track ?? null,
@@ -82,11 +85,15 @@ export async function ytdlpInfo(url) {
 // İlk veri gelene kadar bekler, gelmezse hata fırlatır.
 export function openYtDlp(url, { timeoutMs = 30000 } = {}) {
   return new Promise((resolve, reject) => {
+    // HLS parçaları çalışma klasörüne hep aynı adla ("--Frag1") yazılıyor; aynı anda iki
+    // indirme çakışmasın diye her süreç kendi geçici klasöründe çalışır.
+    const dir = mkdtempSync(join(tmpdir(), "cyberbot-ytdlp-"));
     const p = spawn(
       "yt-dlp",
       argsFor(url, ["-f", "bestaudio/best", "--ffmpeg-location", ffmpegPath, "-o", "-"]),
-      { stdio: ["ignore", "pipe", "pipe"] }
+      { stdio: ["ignore", "pipe", "pipe"], cwd: dir }
     );
+    p.on("close", () => rmSync(dir, { recursive: true, force: true }));
 
     let err = "";
     let started = false;

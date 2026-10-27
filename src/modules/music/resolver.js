@@ -5,8 +5,9 @@ import { hasLinkMetadata, metadataFromLink, normalizeTarget } from "./metadata.j
 import { SEARCH_SOURCES, sourceForUrl } from "./sources/index.js";
 import { openYtDlp, ytdlpInfo } from "./ytdlp.js";
 
-const PER_SOURCE = 5;
+const PER_SOURCE = 6;
 const SOURCE_TIMEOUT_MS = 10000;
+const LIST_SIZE = 6;
 const LIST_PER_SOURCE = 3;
 
 export function isUrl(value) {
@@ -109,23 +110,35 @@ async function targetsFor(target) {
   return searchText(official) === searchText(target) ? [official] : [official, target];
 }
 
-/** !play list için: en iyi sonuçlar, aynı kaynaktan en fazla 3 tane (çeşitlilik için). */
-export async function searchList(query, attempts, limit = 5) {
-  const ranked = await rankAll(await targetsFor(parseQuery(query)), attempts, null);
+/**
+ * !play list için en iyi sonuçlar. Önce çeşitlilik (aynı kaynaktan en fazla 3) ve iyi
+ * eşleşmeler; liste dolmazsa aynı kaynaktan fazlası ve yakın eşleşmelerle tamamlanır.
+ */
+export async function searchList(query, attempts, limit = LIST_SIZE) {
+  const ranked = (await rankAll(await targetsFor(parseQuery(query)), attempts, null))
+    .filter((r) => r.s >= WEAK_MATCH);
+  const picked = new Set();
   const perSource = new Map();
-  const list = [];
-  // Zayıf eşleşmeler sadece yeterince iyi sonuç yoksa listeye girer.
-  const good = ranked.filter((r) => r.s >= GOOD_MATCH).length;
-  const minScore = good >= 3 ? GOOD_MATCH : WEAK_MATCH;
-  for (const r of ranked) {
-    if (r.s < minScore) break;
-    const n = perSource.get(r.source.id) ?? 0;
-    if (n >= LIST_PER_SOURCE) continue;
-    perSource.set(r.source.id, n + 1);
-    list.push(playable(r.source, r.track, { weak: r.s < GOOD_MATCH }));
-    if (list.length >= limit) break;
+
+  const take = (r) => {
+    picked.add(r);
+    perSource.set(r.source.id, (perSource.get(r.source.id) ?? 0) + 1);
+  };
+  const passes = [
+    (r) => r.s >= GOOD_MATCH && (perSource.get(r.source.id) ?? 0) < LIST_PER_SOURCE,
+    (r) => r.s >= GOOD_MATCH,
+    () => true,
+  ];
+  for (const ok of passes) {
+    for (const r of ranked) {
+      if (picked.size >= limit) break;
+      if (!picked.has(r) && ok(r)) take(r);
+    }
   }
-  return list;
+
+  return ranked
+    .filter((r) => picked.has(r))
+    .map((r) => playable(r.source, r.track, { weak: r.s < GOOD_MATCH }));
 }
 
 /**

@@ -72,7 +72,7 @@ export default function musicModule(bot) {
 
   async function showList(ctx, query) {
     const attempts = new Attempts();
-    const items = await searchList(query, attempts, 5);
+    const items = await searchList(query, attempts);
     if (!items.length) {
       const reasons = attempts.summary();
       return ctx.reply(`🔎 "${query}" için sonuç bulunamadı.${reasons ? `\n(${reasons})` : ""}`);
@@ -145,7 +145,7 @@ export default function musicModule(bot) {
         name: "play",
         aliases: ["p"],
         usage: "<link | şarkı adı> | list <şarkı adı> | <numara>",
-        description: "Şarkı çalar ya da kuyruğa ekler. list ile 5 sonuç listeler, numarayla seçilir.",
+        description: "Şarkı çalar ya da kuyruğa ekler. list ile 6 sonuç listeler, numarayla seçilir.",
         async run(ctx) {
           if (!ctx.arg) {
             return ctx.reply(
@@ -281,7 +281,7 @@ export default function musicModule(bot) {
 
           let stations;
           try {
-            stations = await searchStations(term, 5);
+            stations = await searchStations(term);
           } catch (e) {
             console.error("[radio]", e);
             return ctx.reply("⚠️ Radyo rehberine şu an ulaşılamıyor, birazdan tekrar dene.");

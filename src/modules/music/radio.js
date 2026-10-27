@@ -26,7 +26,7 @@ function query(params) {
 }
 
 /** Önce etikete (lofi, jazz, rock...), sonra istasyon adına göre arar; en çok oy alanlar önde. */
-export async function searchStations(term, limit = 5) {
+export async function searchStations(term, limit = 6) {
   const t = term.trim();
   const [byTag, byName] = await Promise.all([
     api(`/json/stations/search?${query({ tag: t.toLocaleLowerCase("tr") })}`).catch(() => []),

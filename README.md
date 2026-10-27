@@ -22,6 +22,7 @@ A music bot for Stoat (works with self-hosted servers). It plays songs from link
 | `!skip` | Skips the current song or radio |
 | `!stop` | Stops playback and clears the queue |
 | `!clear` | Clears the queue; the current song keeps playing |
+| `!volume [1-100 \| +10 \| -10]` (`!ses`) | Shows or sets the volume (kept across songs) |
 | `!queue` (`!q`) | Shows the current song and the queue |
 | `!radio <genre \| station>` | Plays the most popular matching station, e.g. `!radio lofi` |
 | `!radio liste <genre>` / `!radio <n>` | Lists the top 5 stations / plays station number n |

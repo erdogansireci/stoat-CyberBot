@@ -161,6 +161,25 @@ export default function musicModule(bot) {
         },
       },
       {
+        name: "volume",
+        aliases: ["vol", "ses"],
+        usage: "[1-100 | +10 | -10]",
+        description: "Ses seviyesini gösterir ya da ayarlar.",
+        async run(ctx) {
+          const session = sessionOf(ctx);
+          if (!ctx.arg) return ctx.reply(`🔊 Ses: ${session.volume}`);
+
+          const m = ctx.arg.replace("%", "").match(/^([+-])?\s*(\d+)$/);
+          if (!m) return ctx.reply(`Kullanım: ${ctx.prefix}volume 50 | ${ctx.prefix}volume +10 | ${ctx.prefix}volume -10`);
+          const n = Number(m[2]);
+          const target = m[1] === "+" ? session.volume + n : m[1] === "-" ? session.volume - n : n;
+          if (!m[1] && (n < 1 || n > 100)) return ctx.reply("Ses 1 ile 100 arasında olmalı.");
+
+          const v = session.setVolume(target);
+          return ctx.reply(`${v <= 30 ? "🔈" : v <= 70 ? "🔉" : "🔊"} Ses: ${v}`);
+        },
+      },
+      {
         name: "queue",
         aliases: ["q"],
         description: "Çalan şarkıyı ve sıradakileri gösterir.",

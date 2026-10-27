@@ -31,6 +31,19 @@ export class MusicSession {
     this.gen = 0; // her skip/stop'ta artar; eski işlemler kendini iptal eder
     this.handle = null; // { stream, close }
     this.textChannel = null;
+    this.volume = 100; // 1-100; şarkılar ve kanal değişiminde korunur
+  }
+
+  // Oynatıcı her şarkıda ses ayarını sıfırladığı için seviye burada tutulup tekrar uygulanır.
+  // Logaritmik ölçek: 50 kulağa "yarısı" gibi gelir.
+  #applyVolume() {
+    this.player?.volumeTransformer?.setVolumeLogarithmic(this.volume / 100);
+  }
+
+  setVolume(value) {
+    this.volume = Math.max(1, Math.min(100, Math.round(value)));
+    this.#applyVolume();
+    return this.volume;
   }
 
   get connected() {
@@ -197,6 +210,7 @@ export class MusicSession {
     }, START_TIMEOUT_MS);
     player.once("startplay", () => clearTimeout(watchdog));
 
+    this.#applyVolume();
     player.playStream(handle.stream);
 
     if (cand.isRadio) {

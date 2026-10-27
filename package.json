@@ -1,6 +1,6 @@
 {
   "name": "stoat-cyberbot",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "main": "index.js",
   "type": "module",
   "scripts": {
@@ -13,6 +13,7 @@
   "description": "",
   "dependencies": {
     "dotenv": "^17.3.1",
+    "ffmpeg-static": "^5.3.0",
     "revoice.js": "^0.2.166",
     "stoat.js": "^7.3.6",
     "ws": "^8.19.0",

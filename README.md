@@ -1,79 +1,61 @@
 # Stoat CyberBot
 
-A simple music bot for Stoat.chat that can join a voice channel and play audio from YouTube links or search keywords.
+A music bot for Stoat (works with self-hosted servers). It plays songs from links or search keywords, plus internet radio, in a voice channel.
 
 ## Features
 
-- `ping` health-check command
-- Join a voice channel
-- Queue and play YouTube links
-- Search YouTube by keywords and play the first result
-- Skip, stop, and list queue items
-
-## Requirements
-
-- Node.js `18+` (recommended: `20+`)
-- `yt-dlp` installed on your system and available in terminal
-- A Stoat bot token
-
-## Installation
-
-```bash
-npm install
-```
-
-Create a `.env` file:
-
-```env
-STOAT_BOT_TOKEN=BOT_TOKEN_HERE
-PREFIX=!
-```
-
-## Run
-
-```bash
-npm start
-```
-
-On successful startup, you should see a `Bot online: ...` log in the terminal.
+- **Smart search:** cleans titles, checks the official name, and skips previews, remixes and covers unless you ask for them
+- **Free sources, no API keys:** SoundCloud → Audius → Bandcamp → Mixcloud → Internet Archive. If one source fails, the next one is tried
+- **Links:** links from the sources above play directly. Spotify, Deezer, Apple Music and YouTube links are searched by song name
+- **Internet radio:** about 50,000 stations via Radio-Browser
+- **Easy joining:** `!join` comes to your voice channel, and `!play` joins automatically
+- **Clean chat:** short messages only, no links or raw errors. Details go to the log
+- **Modular:** new integrations are added as separate command modules
 
 ## Commands
 
-Default prefix: `!` (can be changed with `PREFIX` in `.env`)
+| Command | Description |
+|---|---|
+| `!join [name \| #channel \| ID]` | Joins your voice channel, or the one you name |
+| `!leave` | Leaves the voice channel |
+| `!play <link \| song>` (`!p`) | Plays a song or adds it to the queue |
+| `!skip` | Skips the current song or radio |
+| `!stop` | Stops playback and clears the queue |
+| `!clear` | Clears the queue; the current song keeps playing |
+| `!queue` (`!q`) | Shows the current song and the queue |
+| `!radio <genre \| station>` | Plays the most popular matching station, e.g. `!radio lofi` |
+| `!radio liste <genre>` / `!radio <n>` | Lists the top 5 stations / plays station number n |
+| `!help` | Lists all commands |
+| `!version` (`!versiyon`) | Shows the bot version |
+| `!ping` | Checks that the bot is online |
 
-- `!ping`  
-  Checks whether the bot is online.
+## Setup
 
-- `!join <voiceChannelId>`  
-  Connects the bot to the given voice channel.
+Copy `.env.example` to `.env` and fill it in:
 
-- `!play <youtube_link | search_keywords>`  
-  Accepts either a direct YouTube link or search keywords.  
-  If keywords are provided, the bot searches YouTube and queues the first result.
+| Variable | Description |
+|---|---|
+| `STOAT_BOT_TOKEN` | Bot token (Stoat → Settings → My Bots) |
+| `STOAT_API_URL` | Your Stoat API URL (default `https://stoat.chat/api`) |
+| `PREFIX` | Command prefix (default `!`) |
+| `MUSIC_SOURCES` | Search order (default `soundcloud,audius,bandcamp,mixcloud,archive`; `youtube` is also available) |
+| `YTDLP_COOKIES` | Optional YouTube cookie file, used only when `youtube` is enabled |
 
-- `!skip`  
-  Skips the current track and moves to the next one.
+Docker:
 
-- `!stop`  
-  Stops playback and clears the queue.
-
-- `!queue`  
-  Lists the first 10 items in the queue.
-
-## Example Usage
-
-```text
-!join 1234567890abcdef
-!play https://www.youtube.com/watch?v=dQw4w9WgXcQ
-!play daft punk harder better faster stronger
-!queue
-!skip
-!stop
+```bash
+docker compose up -d --build
+docker compose logs -f --tail 30
 ```
 
-## Notes
+Local: Node.js 20+ and `yt-dlp` in `PATH`, then `npm install && npm start`.
 
-- For keyword searches, the bot resolves `ytsearch1:<query>` and uses the first result.
-- When a search query is used, the bot sends the resolved first result (title/link) before queueing.
-- The queue is kept in memory and resets when the bot restarts.
-- If `yt-dlp` is not installed, playback commands will fail.
+## Versioning
+
+The version lives in `package.json` and is shown by `!version`. To bump it, run `npm version 1.3.0 --no-git-tag-version`.
+
+## Adding a module
+
+Create `src/modules/<name>/index.js`. It should return `{ name, commands: [{ name, usage, description, run(ctx) }] }`. Then register it in `src/index.js` with `router.use(myModule(bot))`. It appears in `!help` automatically.
+
+To add a music source, create a file in `src/modules/music/sources/` that exports `{ id, name, matchesHost, search, fromUrl, open }`, then add it to `sources/index.js`.
